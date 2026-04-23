@@ -21,12 +21,13 @@ maximize c^T x subject to Ax ≤ b, x ≥ 0
 
 ## Usage
 
-Input is a '.txt' file structured as follows:
-3 2          ← m constraints, n variables
-1 1 <= 4     ← constraints (one per line)
-2 1 <= 6
-0 1 <= 3
-1 4          ← objective function coefficients
+Input is a `.txt` file structured as follows:
+- First line: number of constraints `m` and variables `n`
+- Next `m` lines: constraints in the form `coeff1 coeff2 ... <= rhs`
+- Last line: objective function coefficients `c`
+
+See `test_lp.txt` for an example. The algorithm always maximizes — 
+for minimization, convert manually.
 
 Then run the notebook and set the filename accordingly.
 
