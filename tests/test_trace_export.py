@@ -55,3 +55,27 @@ def test_export_handles_infeasible_result_with_null_x():
     assert reloaded["x"] is None
     assert reloaded["objective_value"] is None
     assert len(reloaded["trace"]) >= 1
+
+
+def test_export_sensitivity_is_null_by_default():
+    problem = _load_fixture("mixed_ge_eq.json")
+    result = solve(problem, collect_trace=True)  # compute_sensitivity defaults to False
+
+    exported = export_trace_json(problem, result)
+    assert exported["sensitivity"] is None
+
+
+def test_export_sensitivity_round_trips_through_json():
+    problem = _load_fixture("vl.json")
+    result = solve(problem, collect_trace=True, compute_sensitivity=True)
+
+    exported = export_trace_json(problem, result)
+    reloaded = json.loads(json.dumps(exported))
+
+    sensitivity = reloaded["sensitivity"]
+    assert sensitivity is not None
+    for constraint_idx in range(len(problem.constraints)):
+        assert str(constraint_idx) in sensitivity["shadow_prices"]
+        assert str(constraint_idx) in sensitivity["rhs_ranges"]
+        lo, hi = sensitivity["rhs_ranges"][str(constraint_idx)]
+        assert lo <= hi

@@ -180,3 +180,24 @@ def test_trace_present_but_x_none_when_infeasible():
     assert result.x is None
     assert result.trace is not None
     assert result.trace[-1].phase == 1
+
+
+def test_sensitivity_default_off():
+    problem = _load_fixture("vl.json")
+    result = solve(problem)
+    assert result.sensitivity is None
+
+
+def test_sensitivity_populated_when_requested():
+    problem = _load_fixture("vl.json")
+    result = solve(problem, compute_sensitivity=True)
+    assert result.status == Status.OPTIMAL
+    assert result.sensitivity is not None
+    assert len(result.sensitivity.shadow_prices) == len(problem.constraints)
+
+
+def test_sensitivity_none_when_not_optimal():
+    problem = _load_fixture("infeasible.json")
+    result = solve(problem, compute_sensitivity=True)
+    assert result.status == Status.INFEASIBLE
+    assert result.sensitivity is None

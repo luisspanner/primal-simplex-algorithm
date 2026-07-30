@@ -61,6 +61,7 @@ class PivotResult:
     non_basis_indices: List[int]
     x_B: np.ndarray
     iterations: int
+    A_B_inv: np.ndarray
     trace: Optional[List[TraceStep]] = None
 
 
@@ -128,6 +129,7 @@ def run_simplex(
                 non_basis_indices=non_basis_indices,
                 x_B=x_B,
                 iterations=iteration,
+                A_B_inv=A_B_inv,
                 trace=trace,
             )
 
@@ -151,6 +153,7 @@ def run_simplex(
                 non_basis_indices=non_basis_indices,
                 x_B=x_B,
                 iterations=iteration,
+                A_B_inv=A_B_inv,
                 trace=trace,
             )
 

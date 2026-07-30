@@ -22,6 +22,20 @@ def export_trace_json(problem: LPProblem, result: SimplexResult) -> dict:
         "objective_value": _float_or_none(result.objective_value),
         "iterations": result.iterations,
         "trace": [_trace_step_dict(step) for step in result.trace],
+        "sensitivity": _sensitivity_dict(result.sensitivity),
+    }
+
+
+def _sensitivity_dict(sensitivity) -> Optional[dict]:
+    if sensitivity is None:
+        return None
+    return {
+        "shadow_prices": {str(k): float(v) for k, v in sensitivity.shadow_prices.items()},
+        "rhs_ranges": {str(k): [float(lo), float(hi)] for k, (lo, hi) in sensitivity.rhs_ranges.items()},
+        "cost_ranges": {
+            str(k): [_float_or_none(lo), _float_or_none(hi)]
+            for k, (lo, hi) in sensitivity.cost_ranges.items()
+        },
     }
 
 

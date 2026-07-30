@@ -50,6 +50,8 @@ class StandardForm:
     var_mapping: List[VarSplit]
     minimize: bool
     objective_shift: float
+    row_sign: List[float]  # +1.0 if this row's original constraint was kept as-is, -1.0 if flipped (rhs was negative)
+    row_constraint_index: List[Optional[int]]  # index into problem.constraints this row came from, or None for a variable-upper-bound row
 
     @property
     def m(self) -> int:
@@ -127,25 +129,32 @@ def standardize(problem: LPProblem) -> StandardForm:
     objective_shift = -objective_shift  # _transform_row returns (row, rhs - adjustment); rhs=0 here
 
     all_rows: List[Tuple[np.ndarray, str, float]] = []
-    for constraint in problem.constraints:
+    row_constraint_index: List[Optional[int]] = []
+    for i, constraint in enumerate(problem.constraints):
         row, rhs = _transform_row(constraint.coeffs, constraint.rhs, var_mapping, n_decision)
         all_rows.append((row, constraint.op, rhs))
+        row_constraint_index.append(i)
     for col_index, op, rhs in extra_rows:
         row = np.zeros(n_decision)
         row[col_index] = 1.0
         all_rows.append((row, op, rhs))
+        row_constraint_index.append(None)
 
     # Flip rows with negative RHS so every row ends up with rhs >= 0.
     flipped_rows = []
+    row_sign: List[float] = []
     for row, op, rhs in all_rows:
+        sign = 1.0
         if rhs < 0:
             row = -row
             rhs = -rhs
+            sign = -1.0
             if op == "<=":
                 op = ">="
             elif op == ">=":
                 op = "<="
         flipped_rows.append((row, op, rhs))
+        row_sign.append(sign)
 
     m = len(flipped_rows)
     slack_col_for_row: Dict[int, int] = {}
@@ -193,4 +202,6 @@ def standardize(problem: LPProblem) -> StandardForm:
         var_mapping=var_mapping,
         minimize=minimize,
         objective_shift=objective_shift,
+        row_sign=row_sign,
+        row_constraint_index=row_constraint_index,
     )
