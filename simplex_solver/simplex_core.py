@@ -27,7 +27,9 @@ DEFAULT_REFACTORIZE_EVERY = 100
 
 
 class SimplexDidNotConverge(Exception):
-    pass
+    def __init__(self, message, trace=None):
+        super().__init__(message)
+        self.trace = trace
 
 
 @dataclass
@@ -176,7 +178,9 @@ def run_simplex(
         if (iteration + 1) % refactorize_every == 0:
             A_B_inv = np.linalg.inv(A[:, basis_indices])
 
-    raise SimplexDidNotConverge(f"Simplex did not converge after {max_iterations} iterations")
+    raise SimplexDidNotConverge(
+        f"Simplex did not converge after {max_iterations} iterations", trace=trace
+    )
 
 
 def _update_basis_inverse(A_B_inv: np.ndarray, d: np.ndarray, leaving_local: int) -> np.ndarray:

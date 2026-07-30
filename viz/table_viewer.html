@@ -284,6 +284,62 @@
     font-family: var(--font-mono);
     font-size: 8px;
   }
+
+  .compare-toggle {
+    width: 100%;
+    font-size: 0.8rem;
+    padding: 9px 10px;
+  }
+  .compare-toggle:hover { background: var(--redline-fill); }
+
+  .compare-panel .polygon-header { margin-bottom: 6px; }
+  .compare-close {
+    font-size: 0.75rem;
+    padding: 5px 10px;
+    white-space: nowrap;
+  }
+  .compare-intro {
+    font-size: 0.8rem;
+    color: var(--ink-muted);
+    margin: 0 0 14px;
+    line-height: 1.5;
+    max-width: 70ch;
+  }
+  .compare-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .compare-controls input[type="range"] { flex: 1; }
+  .compare-controls .step-count { flex: 0 0 auto; }
+  .compare-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 720px) {
+    .compare-grid { grid-template-columns: 1fr; }
+  }
+  .compare-col-header {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+  }
+  .compare-note {
+    font-size: 0.72rem;
+    color: var(--ink-muted);
+    line-height: 1.4;
+  }
+  .compare-table-wrap { max-height: 360px; overflow-y: auto; }
+  .compare-table-wrap table { min-width: 0; font-size: 0.78rem; }
+  .compare-table-wrap thead th { position: sticky; top: 0; }
+  .compare-table-wrap tbody tr.cycle-repeat td {
+    background: rgba(193, 59, 59, 0.08);
+  }
+
   table {
     width: 100%;
     border-collapse: collapse;
@@ -379,9 +435,52 @@
         <div><span class="arrow-in">↑</span> entering variable &nbsp; <span class="arrow-out">↓</span> leaving variable</div>
         <div><span class="bland-mark">B</span> = Bland's rule used this step (anti-cycling)</div>
       </div>
+
+      <button id="btn-compare-toggle" class="compare-toggle">⇄ Compare Dantzig vs Bland</button>
     </aside>
 
     <div class="main-col">
+      <section class="polygon-panel compare-panel" id="compare-panel" style="display:none">
+        <div class="polygon-header">
+          <h2>Why anti-cycling matters — Beale's example</h2>
+          <button id="btn-compare-close" class="compare-close" title="Back to normal view">✕ close</button>
+        </div>
+        <p class="compare-intro">Same problem (<code>degenerate_beale.json</code>), same starting basis, two entering/leaving rules. The step slider drives both tables at once.</p>
+        <div class="compare-controls">
+          <button id="cmp-first">⏮</button>
+          <button id="cmp-prev">◀</button>
+          <input type="range" id="cmp-slider" min="0" max="29" value="0" />
+          <span class="step-count" id="cmp-step-count">1 / 30</span>
+          <button id="cmp-next">▶</button>
+        </div>
+        <div class="compare-grid">
+          <div class="compare-col">
+            <div class="compare-col-header">
+              <span class="phase-tag" style="background:rgba(193,59,59,0.12);color:var(--infeasible)">Dantzig's rule</span>
+              <span id="cmp-dantzig-note" class="compare-note"></span>
+            </div>
+            <div class="table-wrap compare-table-wrap">
+              <table>
+                <thead><tr><th>Iter</th><th>Entering</th><th>Leaving</th><th>x</th><th>Objective</th><th>Basis</th></tr></thead>
+                <tbody id="cmp-dantzig-body"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="compare-col">
+            <div class="compare-col-header">
+              <span class="phase-tag" style="background:rgba(46,125,79,0.12);color:var(--optimal)">Bland's rule</span>
+              <span id="cmp-bland-note" class="compare-note"></span>
+            </div>
+            <div class="table-wrap compare-table-wrap">
+              <table>
+                <thead><tr><th>Iter</th><th>Entering</th><th>Leaving</th><th>x</th><th>Objective</th><th>Basis</th></tr></thead>
+                <tbody id="cmp-bland-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+      <div id="normal-view">
       <section class="polygon-panel" id="polygon-panel" style="display:none">
         <div class="polygon-header">
           <h2>Feasible region &amp; visited path</h2>
@@ -410,6 +509,7 @@
           <tbody id="table-body"></tbody>
         </table>
       </main>
+      </div>
     </div>
 
     <footer>
@@ -2315,7 +2415,806 @@ const TRACE_DATA = {
 };
 /* DATA END */
 
+/* COMPARISON START */
+const COMPARISON_DATA = {
+  "problem": {
+    "sense": "maximize",
+    "c": [
+      0.75,
+      -150.0,
+      0.02,
+      -6.0
+    ],
+    "constraints": [
+      {
+        "coeffs": [
+          0.25,
+          -60.0,
+          -0.04,
+          9.0
+        ],
+        "op": "<=",
+        "rhs": 0.0
+      },
+      {
+        "coeffs": [
+          0.5,
+          -90.0,
+          -0.02,
+          3.0
+        ],
+        "op": "<=",
+        "rhs": 0.0
+      },
+      {
+        "coeffs": [
+          0.0,
+          0.0,
+          1.0,
+          0.0
+        ],
+        "op": "<=",
+        "rhs": 1.0
+      }
+    ]
+  },
+  "dantzig": {
+    "converged": false,
+    "trace": [
+      {
+        "phase": 2,
+        "iteration": 0,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 0,
+        "leaving_col": 4,
+        "basis_indices": [
+          4,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 1,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 1,
+        "leaving_col": 5,
+        "basis_indices": [
+          0,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 2,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 2,
+        "leaving_col": 0,
+        "basis_indices": [
+          0,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 3,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 3,
+        "leaving_col": 1,
+        "basis_indices": [
+          2,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 4,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 4,
+        "leaving_col": 2,
+        "basis_indices": [
+          2,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 5,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 5,
+        "leaving_col": 3,
+        "basis_indices": [
+          4,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 6,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 0,
+        "leaving_col": 4,
+        "basis_indices": [
+          4,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 7,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 1,
+        "leaving_col": 5,
+        "basis_indices": [
+          0,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 8,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 2,
+        "leaving_col": 0,
+        "basis_indices": [
+          0,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 9,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 3,
+        "leaving_col": 1,
+        "basis_indices": [
+          2,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 10,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 4,
+        "leaving_col": 2,
+        "basis_indices": [
+          2,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 11,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 5,
+        "leaving_col": 3,
+        "basis_indices": [
+          4,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 12,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 0,
+        "leaving_col": 4,
+        "basis_indices": [
+          4,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 13,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 1,
+        "leaving_col": 5,
+        "basis_indices": [
+          0,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 14,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 2,
+        "leaving_col": 0,
+        "basis_indices": [
+          0,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 15,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 3,
+        "leaving_col": 1,
+        "basis_indices": [
+          2,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 16,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 4,
+        "leaving_col": 2,
+        "basis_indices": [
+          2,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 17,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 5,
+        "leaving_col": 3,
+        "basis_indices": [
+          4,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 18,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 0,
+        "leaving_col": 4,
+        "basis_indices": [
+          4,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 19,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 1,
+        "leaving_col": 5,
+        "basis_indices": [
+          0,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 20,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 2,
+        "leaving_col": 0,
+        "basis_indices": [
+          0,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 21,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 3,
+        "leaving_col": 1,
+        "basis_indices": [
+          2,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 22,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 4,
+        "leaving_col": 2,
+        "basis_indices": [
+          2,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 23,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 5,
+        "leaving_col": 3,
+        "basis_indices": [
+          4,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 24,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 0,
+        "leaving_col": 4,
+        "basis_indices": [
+          4,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 25,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 1,
+        "leaving_col": 5,
+        "basis_indices": [
+          0,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 26,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 2,
+        "leaving_col": 0,
+        "basis_indices": [
+          0,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 27,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 3,
+        "leaving_col": 1,
+        "basis_indices": [
+          2,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 28,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 4,
+        "leaving_col": 2,
+        "basis_indices": [
+          2,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 29,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 5,
+        "leaving_col": 3,
+        "basis_indices": [
+          4,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      }
+    ],
+    "note": "Plain Dantzig's rule (most-positive reduced cost) cycles forever on this classic example -- shown capped at 30 iterations; watch the basis columns repeat."
+  },
+  "bland": {
+    "converged": true,
+    "trace": [
+      {
+        "phase": 2,
+        "iteration": 0,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 0,
+        "leaving_col": 4,
+        "basis_indices": [
+          4,
+          5,
+          6
+        ],
+        "used_bland": true,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 1,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 1,
+        "leaving_col": 5,
+        "basis_indices": [
+          0,
+          5,
+          6
+        ],
+        "used_bland": true,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 2,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 2,
+        "leaving_col": 0,
+        "basis_indices": [
+          0,
+          1,
+          6
+        ],
+        "used_bland": true,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 3,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 3,
+        "leaving_col": 1,
+        "basis_indices": [
+          2,
+          1,
+          6
+        ],
+        "used_bland": true,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 4,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 0,
+        "leaving_col": 6,
+        "basis_indices": [
+          2,
+          3,
+          6
+        ],
+        "used_bland": true,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 5,
+        "x": [
+          0.016000000000000042,
+          0.0,
+          1.0,
+          0.003999999999999999
+        ],
+        "objective_value": 0.008000000000000033,
+        "entering_col": 4,
+        "leaving_col": 3,
+        "basis_indices": [
+          2,
+          3,
+          0
+        ],
+        "used_bland": true,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 6,
+        "x": [
+          0.040000000000000036,
+          0.0,
+          1.0,
+          0.0
+        ],
+        "objective_value": 0.05000000000000003,
+        "entering_col": null,
+        "leaving_col": null,
+        "basis_indices": [
+          2,
+          4,
+          0
+        ],
+        "used_bland": true,
+        "status": "optimal"
+      }
+    ],
+    "note": "Switching to Bland's rule (smallest index, both entering and leaving) from the very first iteration guarantees termination."
+  }
+};
+/* COMPARISON END */
+
 const state = { fixtureKey: null, stepIndex: 0, playing: false, timer: null };
+const compareState = { active: false, stepIndex: 0 };
 
 function colLabel(problem, col) {
   const n = problem.c.length;
@@ -2619,8 +3518,109 @@ document.getElementById("step-slider").addEventListener("input", (e) => {
   renderStep();
 });
 document.addEventListener("keydown", (e) => {
+  if (compareState.active) return;
   if (e.key === "ArrowLeft") { stopAutoplay(); step(-1); }
   if (e.key === "ArrowRight") { stopAutoplay(); step(1); }
+});
+
+/* ---- Dantzig vs Bland comparison view ---- */
+
+function basisSignature(basisIndices) {
+  return [...basisIndices].sort((a, b) => a - b).join(",");
+}
+
+function renderComparisonTable(tbodyId, trace, problem) {
+  const tbody = document.getElementById(tbodyId);
+  tbody.innerHTML = "";
+  const seen = new Set();
+  trace.forEach((step, i) => {
+    const signature = basisSignature(step.basis_indices);
+    const isRepeat = seen.has(signature);
+    seen.add(signature);
+
+    const tr = document.createElement("tr");
+    tr.dataset.index = i;
+    if (isRepeat) tr.classList.add("cycle-repeat");
+    const entering = step.entering_col !== null
+      ? `<span class="arrow-in">↑</span> ${colLabel(problem, step.entering_col)}`
+      : `<span class="col-note">—</span>`;
+    const leaving = step.leaving_col !== null
+      ? `<span class="arrow-out">↓</span> ${colLabel(problem, step.leaving_col)}`
+      : `<span class="col-note">—</span>`;
+    const basisLabels = step.basis_indices.map((c) => colLabel(problem, c)).join(", ");
+    tr.innerHTML = `
+      <td>${step.iteration}${step.used_bland ? ' <span class="bland-mark">B</span>' : ""}</td>
+      <td>${entering}</td>
+      <td>${leaving}</td>
+      <td>${fmtVec(step.x)}</td>
+      <td>${fmtNum(step.objective_value)}${isRepeat ? ' <span style="color:var(--infeasible)">↺</span>' : ""}</td>
+      <td class="col-note">${basisLabels}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function renderComparisonStep() {
+  const problem = COMPARISON_DATA.problem;
+  const dantzigTrace = COMPARISON_DATA.dantzig.trace;
+  const blandTrace = COMPARISON_DATA.bland.trace;
+  const i = compareState.stepIndex;
+
+  document.getElementById("cmp-slider").value = i;
+  const maxLen = Math.max(dantzigTrace.length, blandTrace.length);
+  document.getElementById("cmp-step-count").textContent = `${i + 1} / ${maxLen}`;
+
+  ["cmp-dantzig-body", "cmp-bland-body"].forEach((id) => {
+    document.querySelectorAll(`#${id} tr`).forEach((tr) => {
+      tr.classList.toggle("current", Number(tr.dataset.index) === i);
+    });
+  });
+  const dRow = document.querySelector(`#cmp-dantzig-body tr[data-index="${Math.min(i, dantzigTrace.length - 1)}"]`);
+  if (dRow) dRow.scrollIntoView({ block: "nearest" });
+  const bRow = document.querySelector(`#cmp-bland-body tr[data-index="${Math.min(i, blandTrace.length - 1)}"]`);
+  if (bRow) bRow.scrollIntoView({ block: "nearest" });
+
+  document.getElementById("cmp-first").disabled = i === 0;
+  document.getElementById("cmp-prev").disabled = i === 0;
+  document.getElementById("cmp-next").disabled = i >= maxLen - 1;
+}
+
+function openComparison() {
+  compareState.active = true;
+  compareState.stepIndex = 0;
+  stopAutoplay();
+  document.getElementById("normal-view").style.display = "none";
+  document.getElementById("compare-panel").style.display = "";
+
+  const problem = COMPARISON_DATA.problem;
+  renderComparisonTable("cmp-dantzig-body", COMPARISON_DATA.dantzig.trace, problem);
+  renderComparisonTable("cmp-bland-body", COMPARISON_DATA.bland.trace, problem);
+  document.getElementById("cmp-dantzig-note").textContent = COMPARISON_DATA.dantzig.note;
+  document.getElementById("cmp-bland-note").textContent = COMPARISON_DATA.bland.note;
+  document.getElementById("cmp-slider").max = Math.max(
+    COMPARISON_DATA.dantzig.trace.length, COMPARISON_DATA.bland.trace.length
+  ) - 1;
+  renderComparisonStep();
+}
+
+function closeComparison() {
+  compareState.active = false;
+  document.getElementById("compare-panel").style.display = "none";
+  document.getElementById("normal-view").style.display = "";
+}
+
+document.getElementById("btn-compare-toggle").addEventListener("click", openComparison);
+document.getElementById("btn-compare-close").addEventListener("click", closeComparison);
+document.getElementById("cmp-first").addEventListener("click", () => { compareState.stepIndex = 0; renderComparisonStep(); });
+document.getElementById("cmp-prev").addEventListener("click", () => { compareState.stepIndex = Math.max(0, compareState.stepIndex - 1); renderComparisonStep(); });
+document.getElementById("cmp-next").addEventListener("click", () => {
+  const maxLen = Math.max(COMPARISON_DATA.dantzig.trace.length, COMPARISON_DATA.bland.trace.length);
+  compareState.stepIndex = Math.min(maxLen - 1, compareState.stepIndex + 1);
+  renderComparisonStep();
+});
+document.getElementById("cmp-slider").addEventListener("input", (e) => {
+  compareState.stepIndex = Number(e.target.value);
+  renderComparisonStep();
 });
 
 populateFixtureSelect();

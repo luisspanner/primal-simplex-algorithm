@@ -176,3 +176,16 @@ def test_trace_captures_bland_rule_usage_on_beale_example():
     )
     assert result.status == "optimal"
     assert all(step.used_bland for step in result.trace)
+
+
+def test_did_not_converge_exception_carries_partial_trace():
+    A, b, c, basis_indices, non_basis_indices = _beale_cycling_example()
+    with pytest.raises(SimplexDidNotConverge) as exc_info:
+        run_simplex(
+            A, b, c, basis_indices, non_basis_indices,
+            bland_after=10_000, max_iterations=30, collect_trace=True,
+        )
+    assert exc_info.value.trace is not None
+    assert len(exc_info.value.trace) == 30
+    # every entry is a genuine (non-terminal) pivot, since it never converged
+    assert all(step.entering_col is not None for step in exc_info.value.trace)
