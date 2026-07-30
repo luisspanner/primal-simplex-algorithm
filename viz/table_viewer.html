@@ -1,0 +1,2412 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Simplex Pivot Ledger</title>
+<style>
+  :root {
+    --paper: #EEF1F6;
+    --panel: #FFFFFF;
+    --ink: #1B2430;
+    --ink-muted: #5A6675;
+    --rule: #C7CFDA;
+    --rule-soft: #DDE3EB;
+    --redline: #A85520;
+    --redline-fill: rgba(168, 85, 32, 0.08);
+    --graphite: #3B5166;
+    --graphite-fill: rgba(59, 81, 102, 0.10);
+    --optimal: #2E7D4F;
+    --infeasible: #C13B3B;
+    --unbounded: #B8860B;
+    --focus: #2E6FA8;
+
+    --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --font-mono: "SF Mono", "Cascadia Code", "Fira Code", Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #12161C;
+      --panel: #181D25;
+      --ink: #DCE3EA;
+      --ink-muted: #8B97A6;
+      --rule: #2E3742;
+      --rule-soft: #232A33;
+      --redline: #E08A4F;
+      --redline-fill: rgba(224, 138, 79, 0.12);
+      --graphite: #7C93A8;
+      --graphite-fill: rgba(124, 147, 168, 0.12);
+      --optimal: #52B679;
+      --infeasible: #E36868;
+      --unbounded: #D8AC4E;
+      --focus: #6DA8E0;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #12161C; --panel: #181D25; --ink: #DCE3EA; --ink-muted: #8B97A6;
+    --rule: #2E3742; --rule-soft: #232A33; --redline: #E08A4F;
+    --redline-fill: rgba(224, 138, 79, 0.12); --graphite: #7C93A8;
+    --graphite-fill: rgba(124, 147, 168, 0.12); --optimal: #52B679;
+    --infeasible: #E36868; --unbounded: #D8AC4E; --focus: #6DA8E0;
+  }
+  :root[data-theme="light"] {
+    --paper: #EEF1F6; --panel: #FFFFFF; --ink: #1B2430; --ink-muted: #5A6675;
+    --rule: #C7CFDA; --rule-soft: #DDE3EB; --redline: #A85520;
+    --redline-fill: rgba(168, 85, 32, 0.08); --graphite: #3B5166;
+    --graphite-fill: rgba(59, 81, 102, 0.10); --optimal: #2E7D4F;
+    --infeasible: #C13B3B; --unbounded: #B8860B; --focus: #2E6FA8;
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--paper); color: var(--ink);
+    font-family: var(--font-ui);
+  }
+  body {
+    background-image:
+      linear-gradient(var(--rule-soft) 1px, transparent 1px),
+      linear-gradient(90deg, var(--rule-soft) 1px, transparent 1px);
+    background-size: 28px 28px;
+    background-attachment: fixed;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    gap: 20px;
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 28px 20px 60px;
+    min-height: 100vh;
+    align-items: start;
+  }
+  @media (max-width: 820px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+
+  h1 {
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    margin: 0 0 4px;
+    text-wrap: balance;
+  }
+  .subtitle {
+    font-size: 0.85rem;
+    color: var(--ink-muted);
+    margin: 0 0 20px;
+    max-width: 60ch;
+    line-height: 1.5;
+  }
+
+  .rail {
+    position: sticky;
+    top: 28px;
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-muted);
+  }
+  select {
+    font: inherit;
+    font-family: var(--font-ui);
+    font-size: 0.9rem;
+    padding: 8px 10px;
+    background: var(--paper);
+    color: var(--ink);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+  }
+  select:focus-visible, button:focus-visible, tr[tabindex]:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 1px;
+  }
+
+  .status-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: var(--graphite-fill);
+    color: var(--graphite);
+    width: fit-content;
+  }
+  .status-chip .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .status-chip.optimal { background: rgba(46, 125, 79, 0.12); color: var(--optimal); }
+  .status-chip.infeasible { background: rgba(193, 59, 59, 0.12); color: var(--infeasible); }
+  .status-chip.unbounded { background: rgba(184, 134, 11, 0.12); color: var(--unbounded); }
+
+  .stat-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 14px;
+  }
+  .stat label {
+    display: block;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--ink-muted);
+    margin-bottom: 2px;
+  }
+  .stat .value {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.95rem;
+  }
+
+  .controls { display: flex; align-items: center; gap: 8px; }
+  .controls .step-count {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.85rem;
+    color: var(--ink-muted);
+    flex: 1;
+    text-align: center;
+  }
+  button {
+    font: inherit;
+    font-family: var(--font-ui);
+    font-size: 0.85rem;
+    padding: 7px 12px;
+    border: 1px solid var(--rule);
+    background: var(--paper);
+    color: var(--ink);
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--redline); color: var(--redline); }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+  button:disabled:hover { border-color: var(--rule); color: var(--ink); }
+  button.play { flex: 1; }
+  button.play.playing { background: var(--redline-fill); border-color: var(--redline); color: var(--redline); }
+
+  input[type="range"] { width: 100%; accent-color: var(--redline); }
+
+  .legend {
+    font-size: 0.75rem;
+    color: var(--ink-muted);
+    line-height: 1.6;
+    border-top: 1px solid var(--rule-soft);
+    padding-top: 12px;
+  }
+  .legend .arrow-in { color: var(--optimal); font-family: var(--font-mono); }
+  .legend .arrow-out { color: var(--infeasible); font-family: var(--font-mono); }
+  .legend .bland-mark { color: var(--redline); font-family: var(--font-mono); }
+
+  .table-wrap {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    overflow-x: auto;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    min-width: 640px;
+  }
+  thead th {
+    position: sticky;
+    top: 0;
+    background: var(--panel);
+    text-align: left;
+    font-family: var(--font-ui);
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-muted);
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--rule);
+    white-space: nowrap;
+  }
+  tbody td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--rule-soft);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover td { background: var(--rule-soft); }
+  tbody tr.current td {
+    background: var(--redline-fill);
+    border-top: 1px solid var(--redline);
+    border-bottom: 1px solid var(--redline);
+  }
+  tbody tr.current td:first-child { border-left: 3px solid var(--redline); padding-left: 9px; }
+
+  .phase-tag {
+    display: inline-block;
+    font-family: var(--font-ui);
+    font-size: 0.68rem;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: var(--graphite-fill);
+    color: var(--graphite);
+  }
+  .col-note { color: var(--ink-muted); font-family: var(--font-ui); }
+
+  footer {
+    grid-column: 1 / -1;
+    font-size: 0.75rem;
+    color: var(--ink-muted);
+    margin-top: 8px;
+  }
+  footer code { font-family: var(--font-mono); }
+</style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="rail">
+      <div>
+        <h1>Simplex Pivot Ledger</h1>
+        <p class="subtitle">Step through the exact pivots <code style="font-family:var(--font-mono)">simplex_solver.solve()</code> took to reach its answer.</p>
+      </div>
+
+      <div class="field">
+        <label for="fixture-select">Problem</label>
+        <select id="fixture-select"></select>
+      </div>
+
+      <div id="status-chip" class="status-chip"><span class="dot"></span><span id="status-text">—</span></div>
+
+      <div class="stat-grid">
+        <div class="stat"><label>Objective</label><div class="value" id="stat-objective">—</div></div>
+        <div class="stat"><label>Iterations</label><div class="value" id="stat-iterations">—</div></div>
+        <div class="stat" style="grid-column: 1 / -1;"><label>x</label><div class="value" id="stat-x">—</div></div>
+      </div>
+
+      <div class="field">
+        <label for="step-slider">Step</label>
+        <input type="range" id="step-slider" min="0" max="0" value="0" />
+        <div class="controls">
+          <button id="btn-first" title="First step">⏮</button>
+          <button id="btn-prev" title="Previous step">◀</button>
+          <span class="step-count" id="step-count">0 / 0</span>
+          <button id="btn-next" title="Next step">▶</button>
+          <button id="btn-last" title="Last step">⏭</button>
+        </div>
+        <button id="btn-play" class="play">▶ Autoplay</button>
+      </div>
+
+      <div class="legend">
+        <div><span class="arrow-in">↑</span> entering variable &nbsp; <span class="arrow-out">↓</span> leaving variable</div>
+        <div><span class="bland-mark">B</span> = Bland's rule used this step (anti-cycling)</div>
+      </div>
+    </aside>
+
+    <main class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Iter</th>
+            <th>Phase</th>
+            <th>Entering</th>
+            <th>Leaving</th>
+            <th>x</th>
+            <th>Objective</th>
+            <th>Basis (cols)</th>
+          </tr>
+        </thead>
+        <tbody id="table-body"></tbody>
+      </table>
+    </main>
+
+    <footer>
+      Data embedded below was generated by <code>viz/generate_demo_data.py</code> via <code>simplex_solver.trace_export.export_trace_json</code>. No network requests — everything on this page is local.
+    </footer>
+  </div>
+
+<script>
+/* DATA START */
+const TRACE_DATA = {
+  "vl": {
+    "problem": {
+      "sense": "maximize",
+      "c": [
+        3.0,
+        2.0
+      ],
+      "constraints": [
+        {
+          "coeffs": [
+            4.0,
+            2.0
+          ],
+          "op": "<=",
+          "rhs": 9.0
+        },
+        {
+          "coeffs": [
+            10.0,
+            20.0
+          ],
+          "op": "<=",
+          "rhs": 51.0
+        },
+        {
+          "coeffs": [
+            4.0,
+            3.0
+          ],
+          "op": "<=",
+          "rhs": 10.0
+        }
+      ]
+    },
+    "status": "optimal",
+    "x": [
+      1.75,
+      1.0
+    ],
+    "objective_value": 7.25,
+    "iterations": 2,
+    "trace": [
+      {
+        "phase": 1,
+        "iteration": 0,
+        "x": [
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": null,
+        "leaving_col": null,
+        "basis_indices": [
+          2,
+          3,
+          4
+        ],
+        "used_bland": false,
+        "status": "optimal"
+      },
+      {
+        "phase": 2,
+        "iteration": 0,
+        "x": [
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 0,
+        "leaving_col": 2,
+        "basis_indices": [
+          2,
+          3,
+          4
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 1,
+        "x": [
+          2.25,
+          0.0
+        ],
+        "objective_value": 6.75,
+        "entering_col": 1,
+        "leaving_col": 4,
+        "basis_indices": [
+          0,
+          3,
+          4
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 2,
+        "x": [
+          1.75,
+          1.0
+        ],
+        "objective_value": 7.25,
+        "entering_col": null,
+        "leaving_col": null,
+        "basis_indices": [
+          0,
+          3,
+          1
+        ],
+        "used_bland": false,
+        "status": "optimal"
+      }
+    ],
+    "label": "Canonical <=  (vl.json)"
+  },
+  "mixed_ge_eq": {
+    "problem": {
+      "sense": "maximize",
+      "c": [
+        1.0,
+        1.0
+      ],
+      "constraints": [
+        {
+          "coeffs": [
+            1.0,
+            1.0
+          ],
+          "op": "<=",
+          "rhs": 10.0
+        },
+        {
+          "coeffs": [
+            1.0,
+            -1.0
+          ],
+          "op": "=",
+          "rhs": 2.0
+        },
+        {
+          "coeffs": [
+            1.0,
+            2.0
+          ],
+          "op": ">=",
+          "rhs": 3.0
+        }
+      ]
+    },
+    "status": "optimal",
+    "x": [
+      6.0,
+      4.0
+    ],
+    "objective_value": 10.0,
+    "iterations": 3,
+    "trace": [
+      {
+        "phase": 1,
+        "iteration": 0,
+        "x": [
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 0,
+        "leaving_col": 4,
+        "basis_indices": [
+          2,
+          4,
+          5
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 1,
+        "iteration": 1,
+        "x": [
+          2.0,
+          0.0
+        ],
+        "objective_value": 2.0,
+        "entering_col": 1,
+        "leaving_col": 5,
+        "basis_indices": [
+          2,
+          0,
+          5
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 1,
+        "iteration": 2,
+        "x": [
+          2.3333333333333335,
+          0.3333333333333333
+        ],
+        "objective_value": 2.666666666666667,
+        "entering_col": null,
+        "leaving_col": null,
+        "basis_indices": [
+          2,
+          0,
+          1
+        ],
+        "used_bland": false,
+        "status": "optimal"
+      },
+      {
+        "phase": 2,
+        "iteration": 0,
+        "x": [
+          2.3333333333333335,
+          0.3333333333333333
+        ],
+        "objective_value": 2.666666666666667,
+        "entering_col": 3,
+        "leaving_col": 2,
+        "basis_indices": [
+          2,
+          0,
+          1
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 1,
+        "x": [
+          6.0,
+          4.0
+        ],
+        "objective_value": 10.0,
+        "entering_col": null,
+        "leaving_col": null,
+        "basis_indices": [
+          3,
+          0,
+          1
+        ],
+        "used_bland": false,
+        "status": "optimal"
+      }
+    ],
+    "label": "Mixed <=, =, >=  (mixed_ge_eq.json)"
+  },
+  "minimize": {
+    "problem": {
+      "sense": "minimize",
+      "c": [
+        1.0,
+        1.0
+      ],
+      "constraints": [
+        {
+          "coeffs": [
+            1.0,
+            1.0
+          ],
+          "op": ">=",
+          "rhs": 4.0
+        },
+        {
+          "coeffs": [
+            1.0,
+            -1.0
+          ],
+          "op": "=",
+          "rhs": 0.0
+        }
+      ]
+    },
+    "status": "optimal",
+    "x": [
+      2.0,
+      2.0
+    ],
+    "objective_value": 4.0,
+    "iterations": 2,
+    "trace": [
+      {
+        "phase": 1,
+        "iteration": 0,
+        "x": [
+          0.0,
+          0.0
+        ],
+        "objective_value": -0.0,
+        "entering_col": 0,
+        "leaving_col": 4,
+        "basis_indices": [
+          3,
+          4
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 1,
+        "iteration": 1,
+        "x": [
+          0.0,
+          0.0
+        ],
+        "objective_value": -0.0,
+        "entering_col": 1,
+        "leaving_col": 3,
+        "basis_indices": [
+          3,
+          0
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 1,
+        "iteration": 2,
+        "x": [
+          2.0,
+          2.0
+        ],
+        "objective_value": 4.0,
+        "entering_col": null,
+        "leaving_col": null,
+        "basis_indices": [
+          1,
+          0
+        ],
+        "used_bland": false,
+        "status": "optimal"
+      },
+      {
+        "phase": 2,
+        "iteration": 0,
+        "x": [
+          2.0,
+          2.0
+        ],
+        "objective_value": 4.0,
+        "entering_col": null,
+        "leaving_col": null,
+        "basis_indices": [
+          1,
+          0
+        ],
+        "used_bland": false,
+        "status": "optimal"
+      }
+    ],
+    "label": "Minimize, mixed >=/=  (minimize.json)"
+  },
+  "degenerate_beale": {
+    "problem": {
+      "sense": "maximize",
+      "c": [
+        0.75,
+        -150.0,
+        0.02,
+        -6.0
+      ],
+      "constraints": [
+        {
+          "coeffs": [
+            0.25,
+            -60.0,
+            -0.04,
+            9.0
+          ],
+          "op": "<=",
+          "rhs": 0.0
+        },
+        {
+          "coeffs": [
+            0.5,
+            -90.0,
+            -0.02,
+            3.0
+          ],
+          "op": "<=",
+          "rhs": 0.0
+        },
+        {
+          "coeffs": [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          "op": "<=",
+          "rhs": 1.0
+        }
+      ]
+    },
+    "status": "optimal",
+    "x": [
+      0.040000000000000036,
+      0.0,
+      1.0,
+      0.0
+    ],
+    "objective_value": 0.05000000000000003,
+    "iterations": 72,
+    "trace": [
+      {
+        "phase": 1,
+        "iteration": 0,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": null,
+        "leaving_col": null,
+        "basis_indices": [
+          4,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": "optimal"
+      },
+      {
+        "phase": 2,
+        "iteration": 0,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 0,
+        "leaving_col": 4,
+        "basis_indices": [
+          4,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 1,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 1,
+        "leaving_col": 5,
+        "basis_indices": [
+          0,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 2,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 2,
+        "leaving_col": 0,
+        "basis_indices": [
+          0,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 3,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 3,
+        "leaving_col": 1,
+        "basis_indices": [
+          2,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 4,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 4,
+        "leaving_col": 2,
+        "basis_indices": [
+          2,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 5,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 5,
+        "leaving_col": 3,
+        "basis_indices": [
+          4,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 6,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 0,
+        "leaving_col": 4,
+        "basis_indices": [
+          4,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 7,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 1,
+        "leaving_col": 5,
+        "basis_indices": [
+          0,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 8,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 2,
+        "leaving_col": 0,
+        "basis_indices": [
+          0,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 9,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 3,
+        "leaving_col": 1,
+        "basis_indices": [
+          2,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 10,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 4,
+        "leaving_col": 2,
+        "basis_indices": [
+          2,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 11,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 5,
+        "leaving_col": 3,
+        "basis_indices": [
+          4,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 12,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 0,
+        "leaving_col": 4,
+        "basis_indices": [
+          4,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 13,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 1,
+        "leaving_col": 5,
+        "basis_indices": [
+          0,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 14,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 2,
+        "leaving_col": 0,
+        "basis_indices": [
+          0,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 15,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 3,
+        "leaving_col": 1,
+        "basis_indices": [
+          2,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 16,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 4,
+        "leaving_col": 2,
+        "basis_indices": [
+          2,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 17,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 5,
+        "leaving_col": 3,
+        "basis_indices": [
+          4,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 18,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 0,
+        "leaving_col": 4,
+        "basis_indices": [
+          4,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 19,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 1,
+        "leaving_col": 5,
+        "basis_indices": [
+          0,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 20,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 2,
+        "leaving_col": 0,
+        "basis_indices": [
+          0,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 21,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 3,
+        "leaving_col": 1,
+        "basis_indices": [
+          2,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 22,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 4,
+        "leaving_col": 2,
+        "basis_indices": [
+          2,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 23,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 5,
+        "leaving_col": 3,
+        "basis_indices": [
+          4,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 24,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 0,
+        "leaving_col": 4,
+        "basis_indices": [
+          4,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 25,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 1,
+        "leaving_col": 5,
+        "basis_indices": [
+          0,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 26,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 2,
+        "leaving_col": 0,
+        "basis_indices": [
+          0,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 27,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 3,
+        "leaving_col": 1,
+        "basis_indices": [
+          2,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 28,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 4,
+        "leaving_col": 2,
+        "basis_indices": [
+          2,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 29,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 5,
+        "leaving_col": 3,
+        "basis_indices": [
+          4,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 30,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 0,
+        "leaving_col": 4,
+        "basis_indices": [
+          4,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 31,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 1,
+        "leaving_col": 5,
+        "basis_indices": [
+          0,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 32,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 2,
+        "leaving_col": 0,
+        "basis_indices": [
+          0,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 33,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 3,
+        "leaving_col": 1,
+        "basis_indices": [
+          2,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 34,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 4,
+        "leaving_col": 2,
+        "basis_indices": [
+          2,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 35,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 5,
+        "leaving_col": 3,
+        "basis_indices": [
+          4,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 36,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 0,
+        "leaving_col": 4,
+        "basis_indices": [
+          4,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 37,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 1,
+        "leaving_col": 5,
+        "basis_indices": [
+          0,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 38,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 2,
+        "leaving_col": 0,
+        "basis_indices": [
+          0,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 39,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 3,
+        "leaving_col": 1,
+        "basis_indices": [
+          2,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 40,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 4,
+        "leaving_col": 2,
+        "basis_indices": [
+          2,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 41,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 5,
+        "leaving_col": 3,
+        "basis_indices": [
+          4,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 42,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 0,
+        "leaving_col": 4,
+        "basis_indices": [
+          4,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 43,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 1,
+        "leaving_col": 5,
+        "basis_indices": [
+          0,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 44,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 2,
+        "leaving_col": 0,
+        "basis_indices": [
+          0,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 45,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 3,
+        "leaving_col": 1,
+        "basis_indices": [
+          2,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 46,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 4,
+        "leaving_col": 2,
+        "basis_indices": [
+          2,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 47,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 5,
+        "leaving_col": 3,
+        "basis_indices": [
+          4,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 48,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 0,
+        "leaving_col": 4,
+        "basis_indices": [
+          4,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 49,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 1,
+        "leaving_col": 5,
+        "basis_indices": [
+          0,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 50,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 2,
+        "leaving_col": 0,
+        "basis_indices": [
+          0,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 51,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 3,
+        "leaving_col": 1,
+        "basis_indices": [
+          2,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 52,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 4,
+        "leaving_col": 2,
+        "basis_indices": [
+          2,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 53,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 5,
+        "leaving_col": 3,
+        "basis_indices": [
+          4,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 54,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 0,
+        "leaving_col": 4,
+        "basis_indices": [
+          4,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 55,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 1,
+        "leaving_col": 5,
+        "basis_indices": [
+          0,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 56,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 2,
+        "leaving_col": 0,
+        "basis_indices": [
+          0,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 57,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 3,
+        "leaving_col": 1,
+        "basis_indices": [
+          2,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 58,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 4,
+        "leaving_col": 2,
+        "basis_indices": [
+          2,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 59,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 5,
+        "leaving_col": 3,
+        "basis_indices": [
+          4,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 60,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 0,
+        "leaving_col": 4,
+        "basis_indices": [
+          4,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 61,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 1,
+        "leaving_col": 5,
+        "basis_indices": [
+          0,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 62,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 2,
+        "leaving_col": 0,
+        "basis_indices": [
+          0,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 63,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 3,
+        "leaving_col": 1,
+        "basis_indices": [
+          2,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 64,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 4,
+        "leaving_col": 2,
+        "basis_indices": [
+          2,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 65,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 5,
+        "leaving_col": 3,
+        "basis_indices": [
+          4,
+          3,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 66,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 0,
+        "leaving_col": 4,
+        "basis_indices": [
+          4,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 67,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 1,
+        "leaving_col": 5,
+        "basis_indices": [
+          0,
+          5,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 68,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 2,
+        "leaving_col": 0,
+        "basis_indices": [
+          0,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 69,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 3,
+        "leaving_col": 1,
+        "basis_indices": [
+          2,
+          1,
+          6
+        ],
+        "used_bland": false,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 70,
+        "x": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "objective_value": 0.0,
+        "entering_col": 0,
+        "leaving_col": 6,
+        "basis_indices": [
+          2,
+          3,
+          6
+        ],
+        "used_bland": true,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 71,
+        "x": [
+          0.016000000000000042,
+          0.0,
+          1.0,
+          0.003999999999999999
+        ],
+        "objective_value": 0.008000000000000033,
+        "entering_col": 4,
+        "leaving_col": 3,
+        "basis_indices": [
+          2,
+          3,
+          0
+        ],
+        "used_bland": true,
+        "status": null
+      },
+      {
+        "phase": 2,
+        "iteration": 72,
+        "x": [
+          0.040000000000000036,
+          0.0,
+          1.0,
+          0.0
+        ],
+        "objective_value": 0.05000000000000003,
+        "entering_col": null,
+        "leaving_col": null,
+        "basis_indices": [
+          2,
+          4,
+          0
+        ],
+        "used_bland": true,
+        "status": "optimal"
+      }
+    ],
+    "label": "Beale's cycling example  (degenerate_beale.json)"
+  }
+};
+/* DATA END */
+
+const state = { fixtureKey: null, stepIndex: 0, playing: false, timer: null };
+
+function colLabel(problem, col) {
+  const n = problem.c.length;
+  if (col === null || col === undefined) return "—";
+  if (col < n) return "x" + (col + 1);
+  return "s" + (col - n + 1);
+}
+
+function fmtNum(v) {
+  if (v === null || v === undefined) return "—";
+  return Number(v).toFixed(3).replace(/\.?0+$/, (m) => (m === "." ? "" : m.length > 1 ? "" : m));
+}
+
+function fmtVec(vec) {
+  if (!vec) return "—";
+  return "[" + vec.map((v) => Number(v).toFixed(2)).join(", ") + "]";
+}
+
+function populateFixtureSelect() {
+  const select = document.getElementById("fixture-select");
+  select.innerHTML = "";
+  Object.keys(TRACE_DATA).forEach((key) => {
+    const opt = document.createElement("option");
+    opt.value = key;
+    opt.textContent = TRACE_DATA[key].label || key;
+    select.appendChild(opt);
+  });
+  select.addEventListener("change", () => {
+    setFixture(select.value);
+  });
+}
+
+function setFixture(key) {
+  stopAutoplay();
+  state.fixtureKey = key;
+  state.stepIndex = TRACE_DATA[key].trace.length - 1;
+  const slider = document.getElementById("step-slider");
+  slider.max = TRACE_DATA[key].trace.length - 1;
+  renderTable();
+  renderStep();
+}
+
+function currentData() {
+  return TRACE_DATA[state.fixtureKey];
+}
+
+function renderTable() {
+  const data = currentData();
+  const problem = data.problem;
+  const tbody = document.getElementById("table-body");
+  tbody.innerHTML = "";
+  data.trace.forEach((step, i) => {
+    const tr = document.createElement("tr");
+    tr.dataset.index = i;
+    tr.tabIndex = 0;
+    const entering = step.entering_col !== null
+      ? `<span class="arrow-in">↑</span> ${colLabel(problem, step.entering_col)}`
+      : `<span class="col-note">—</span>`;
+    const leaving = step.leaving_col !== null
+      ? `<span class="arrow-out">↓</span> ${colLabel(problem, step.leaving_col)}`
+      : `<span class="col-note">—</span>`;
+    const basisLabels = step.basis_indices.map((c) => colLabel(problem, c)).join(", ");
+    tr.innerHTML = `
+      <td>${step.iteration}${step.used_bland ? ' <span class="bland-mark">B</span>' : ""}</td>
+      <td><span class="phase-tag">Phase ${step.phase}</span></td>
+      <td>${entering}</td>
+      <td>${leaving}</td>
+      <td>${fmtVec(step.x)}</td>
+      <td>${fmtNum(step.objective_value)}</td>
+      <td class="col-note">${basisLabels}</td>
+    `;
+    tr.addEventListener("click", () => {
+      stopAutoplay();
+      state.stepIndex = i;
+      renderStep();
+    });
+    tbody.appendChild(tr);
+  });
+}
+
+function renderStep() {
+  const data = currentData();
+  const step = data.trace[state.stepIndex];
+  const isLast = state.stepIndex === data.trace.length - 1;
+
+  document.getElementById("step-slider").value = state.stepIndex;
+  document.getElementById("step-count").textContent = `${state.stepIndex + 1} / ${data.trace.length}`;
+
+  document.querySelectorAll("#table-body tr").forEach((tr) => {
+    tr.classList.toggle("current", Number(tr.dataset.index) === state.stepIndex);
+  });
+  const currentRow = document.querySelector(`#table-body tr[data-index="${state.stepIndex}"]`);
+  if (currentRow) currentRow.scrollIntoView({ block: "nearest" });
+
+  document.getElementById("stat-objective").textContent = fmtNum(step.objective_value);
+  document.getElementById("stat-x").textContent = fmtVec(step.x);
+  document.getElementById("stat-iterations").textContent = `${data.iterations} total`;
+
+  const chip = document.getElementById("status-chip");
+  const statusText = document.getElementById("status-text");
+  const displayStatus = isLast ? data.status : "in progress";
+  chip.className = "status-chip" + (isLast ? " " + data.status : "");
+  statusText.textContent = displayStatus;
+
+  document.getElementById("btn-first").disabled = state.stepIndex === 0;
+  document.getElementById("btn-prev").disabled = state.stepIndex === 0;
+  document.getElementById("btn-next").disabled = isLast;
+  document.getElementById("btn-last").disabled = isLast;
+}
+
+function step(delta) {
+  const data = currentData();
+  const next = state.stepIndex + delta;
+  if (next < 0 || next >= data.trace.length) {
+    stopAutoplay();
+    return;
+  }
+  state.stepIndex = next;
+  renderStep();
+}
+
+function stopAutoplay() {
+  state.playing = false;
+  if (state.timer) clearInterval(state.timer);
+  state.timer = null;
+  const btn = document.getElementById("btn-play");
+  btn.classList.remove("playing");
+  btn.textContent = "▶ Autoplay";
+}
+
+function toggleAutoplay() {
+  const data = currentData();
+  if (state.playing) {
+    stopAutoplay();
+    return;
+  }
+  if (state.stepIndex >= data.trace.length - 1) {
+    state.stepIndex = 0;
+  }
+  state.playing = true;
+  const btn = document.getElementById("btn-play");
+  btn.classList.add("playing");
+  btn.textContent = "⏸ Pause";
+  renderStep();
+  state.timer = setInterval(() => {
+    if (state.stepIndex >= data.trace.length - 1) {
+      stopAutoplay();
+      return;
+    }
+    state.stepIndex += 1;
+    renderStep();
+  }, 700);
+}
+
+document.getElementById("btn-first").addEventListener("click", () => { stopAutoplay(); state.stepIndex = 0; renderStep(); });
+document.getElementById("btn-last").addEventListener("click", () => { stopAutoplay(); state.stepIndex = currentData().trace.length - 1; renderStep(); });
+document.getElementById("btn-prev").addEventListener("click", () => { stopAutoplay(); step(-1); });
+document.getElementById("btn-next").addEventListener("click", () => { stopAutoplay(); step(1); });
+document.getElementById("btn-play").addEventListener("click", toggleAutoplay);
+document.getElementById("step-slider").addEventListener("input", (e) => {
+  stopAutoplay();
+  state.stepIndex = Number(e.target.value);
+  renderStep();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowLeft") { stopAutoplay(); step(-1); }
+  if (e.key === "ArrowRight") { stopAutoplay(); step(1); }
+});
+
+populateFixtureSelect();
+setFixture(Object.keys(TRACE_DATA)[0]);
+</script>
+</body>
+</html>
