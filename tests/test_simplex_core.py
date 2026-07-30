@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from simplex_solver.simplex_core import SimplexDidNotConverge, run_simplex
+from simplex_solver.simplex_core import SimplexDidNotConverge, _update_basis_inverse, run_simplex
 
 
 def _beale_cycling_example():
@@ -77,3 +77,48 @@ def test_unbounded_problem_is_detected():
 
     result = run_simplex(A, b, c, basis_indices, non_basis_indices)
     assert result.status == "unbounded"
+
+
+def test_pfi_update_matches_full_reinversion():
+    rng = np.random.default_rng(42)
+    m = 6
+    A_B = rng.integers(1, 10, size=(m, m)).astype(float)
+    A_B_inv = np.linalg.inv(A_B)
+
+    entering_col = rng.integers(1, 10, size=m).astype(float)
+    d = A_B_inv @ entering_col
+    leaving_local = 2
+
+    updated_inv = _update_basis_inverse(A_B_inv, d, leaving_local)
+
+    # Independently recompute the inverse of the basis after swapping in
+    # entering_col at column `leaving_local`, the slow/naive way.
+    A_B_new = A_B.copy()
+    A_B_new[:, leaving_local] = entering_col
+    expected_inv = np.linalg.inv(A_B_new)
+
+    assert np.allclose(updated_inv, expected_inv)
+
+
+def test_pfi_update_matches_scipy_on_larger_random_problem():
+    scipy_optimize = pytest.importorskip("scipy.optimize")
+    rng = np.random.default_rng(7)
+    m, n_decision = 20, 20
+    A_dec = rng.integers(1, 10, size=(m, n_decision)).astype(float)
+    b = rng.integers(50, 200, size=m).astype(float)
+    c = rng.integers(1, 20, size=n_decision).astype(float)
+
+    A = np.hstack([A_dec, np.eye(m)])
+    c_full = np.hstack([c, np.zeros(m)])
+    basis_indices = list(range(n_decision, n_decision + m))
+    non_basis_indices = list(range(n_decision))
+
+    result = run_simplex(A, b, c_full, basis_indices, non_basis_indices)
+    assert result.status == "optimal"
+    objective = c_full[result.basis_indices] @ result.x_B
+
+    scipy_result = scipy_optimize.linprog(
+        -c, A_ub=A_dec, b_ub=b, bounds=[(0, None)] * n_decision, method="highs"
+    )
+    assert scipy_result.status == 0
+    assert objective == pytest.approx(-scipy_result.fun, rel=1e-6)

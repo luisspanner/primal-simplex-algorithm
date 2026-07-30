@@ -1,4 +1,4 @@
-"""Anti-cycling primal simplex pivoting engine.
+"""Anti-cycling, incrementally-updated primal simplex pivoting engine.
 
 Same reduced-cost / ratio-test / column-swap pivoting math as the legacy
 teaching implementation (simplex_solver.legacy_teaching.simplex_step), but:
@@ -9,6 +9,12 @@ teaching implementation (simplex_solver.legacy_teaching.simplex_step), but:
     degenerate/cycling problems
   - raises a clear error instead of looping forever if it still fails to
     converge within a hard iteration cap
+  - maintains the basis inverse via the revised-simplex product-form-of-
+    the-inverse (PFI) update (O(m^2) per iteration) instead of recomputing
+    np.linalg.inv(A_B) from scratch every iteration (O(m^3)), with periodic
+    refactorization to bound floating-point drift. legacy_teaching.py keeps
+    the from-scratch approach on purpose, as a naive baseline to compare
+    against.
 """
 from dataclasses import dataclass
 from typing import List
@@ -17,6 +23,7 @@ import numpy as np
 
 DEFAULT_TOL = 1e-9
 DEFAULT_MAX_ITERATIONS = 10_000
+DEFAULT_REFACTORIZE_EVERY = 100
 
 
 class SimplexDidNotConverge(Exception):
@@ -42,6 +49,7 @@ def run_simplex(
     tol: float = DEFAULT_TOL,
     bland_after: int = None,
     max_iterations: int = DEFAULT_MAX_ITERATIONS,
+    refactorize_every: int = DEFAULT_REFACTORIZE_EVERY,
 ) -> PivotResult:
     """Run primal simplex pivots to optimality (or detect unboundedness),
     starting from the given feasible basis. Does not mutate its inputs."""
@@ -51,13 +59,12 @@ def run_simplex(
     if bland_after is None:
         bland_after = max(50, 10 * n)
 
-    x_B = None
+    A_B_inv = np.linalg.inv(A[:, basis_indices])
+
     for iteration in range(max_iterations):
-        A_B = A[:, basis_indices]
         A_N = A[:, non_basis_indices]
         c_B = c[basis_indices]
         c_N = c[non_basis_indices]
-        A_B_inv = np.linalg.inv(A_B)
         x_B = A_B_inv @ b
         reduced_costs = c_N - c_B @ A_B_inv @ A_N
 
@@ -84,12 +91,28 @@ def run_simplex(
 
         leaving_local = _choose_leaving(x_B, d, basis_indices, tol, use_bland)
 
+        A_B_inv = _update_basis_inverse(A_B_inv, d, leaving_local)
+
         basis_indices[leaving_local], non_basis_indices[entering_local] = (
             non_basis_indices[entering_local],
             basis_indices[leaving_local],
         )
 
+        if (iteration + 1) % refactorize_every == 0:
+            A_B_inv = np.linalg.inv(A[:, basis_indices])
+
     raise SimplexDidNotConverge(f"Simplex did not converge after {max_iterations} iterations")
+
+
+def _update_basis_inverse(A_B_inv: np.ndarray, d: np.ndarray, leaving_local: int) -> np.ndarray:
+    """Product-form-of-the-inverse update: given the direction vector
+    d = A_B_inv @ A_N[:, entering] and the pivot row (leaving_local),
+    return the inverse for the basis after swapping in the entering
+    column, without recomputing np.linalg.inv from scratch."""
+    pivot_row = A_B_inv[leaving_local, :] / d[leaving_local]
+    updated = A_B_inv - np.outer(d, pivot_row)
+    updated[leaving_local, :] = pivot_row
+    return updated
 
 
 def _choose_entering(reduced_costs, non_basis_indices, tol, use_bland) -> int:
