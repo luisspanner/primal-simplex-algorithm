@@ -83,3 +83,47 @@ def test_equality_only_infeasible_system():
     std = standardize(problem)
     result = solve_phase1(std)
     assert not result.feasible
+
+
+def test_trace_default_off():
+    problem = LPProblem(
+        c=[1.0, 4.0],
+        sense="maximize",
+        constraints=[Constraint(coeffs=[1.0, 1.0], op="<=", rhs=4.0)],
+    )
+    std = standardize(problem)
+    result = solve_phase1(std)
+    assert result.trace is None
+
+
+def test_trace_on_trivial_fast_path():
+    problem = LPProblem(
+        c=[1.0, 4.0],
+        sense="maximize",
+        constraints=[Constraint(coeffs=[1.0, 1.0], op="<=", rhs=4.0)],
+    )
+    std = standardize(problem)
+    result = solve_phase1(std, collect_trace=True)
+    assert result.trace is not None
+    assert len(result.trace) == 1
+    assert result.trace[0].status == "optimal"
+
+
+def test_trace_on_mixed_constraints_pivoting_path():
+    problem = LPProblem(
+        c=[1.0, 1.0],
+        sense="maximize",
+        constraints=[
+            Constraint(coeffs=[1.0, 1.0], op="<=", rhs=10.0),
+            Constraint(coeffs=[1.0, -1.0], op="=", rhs=2.0),
+            Constraint(coeffs=[1.0, 2.0], op=">=", rhs=3.0),
+        ],
+    )
+    std = standardize(problem)
+    result = solve_phase1(std, collect_trace=True)
+    assert result.feasible
+    assert result.trace is not None
+    assert result.trace[-1].status == "optimal"
+    # _drive_out_basic_artificials may relabel the basis after run_simplex
+    # returns, but never changes x_B (driven-out pivots are at value 0).
+    assert np.allclose(result.trace[-1].x_B, result.x_B)

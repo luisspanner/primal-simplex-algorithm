@@ -143,3 +143,40 @@ def test_fixture_objective_matches_scipy(fixture_name):
     if expected is None:
         pytest.skip("scipy unavailable or reported non-optimal status")
     assert result.objective_value == pytest.approx(expected, rel=1e-6, abs=1e-6)
+
+
+def test_trace_default_off():
+    problem = LPProblem(
+        c=[3.0, 2.0],
+        sense="maximize",
+        constraints=[Constraint(coeffs=[4.0, 2.0], op="<=", rhs=9.0)],
+    )
+    result = solve(problem)
+    assert result.trace is None
+
+
+def test_trace_final_entry_matches_result_for_optimal_problem():
+    problem = _load_fixture("mixed_ge_eq.json")
+    result = solve(problem, collect_trace=True)
+    assert result.status == Status.OPTIMAL
+    assert result.trace is not None
+    assert len(result.trace) >= 1
+
+    final_step = result.trace[-1]
+    assert final_step.status == "optimal"
+    for a, b in zip(final_step.x, result.x):
+        assert a == pytest.approx(b)
+    assert final_step.objective_value == pytest.approx(result.objective_value)
+
+    # the mixed >=/= fixture needs Phase I, so both phases should appear
+    phases_seen = {step.phase for step in result.trace}
+    assert phases_seen == {1, 2}
+
+
+def test_trace_present_but_x_none_when_infeasible():
+    problem = _load_fixture("infeasible.json")
+    result = solve(problem, collect_trace=True)
+    assert result.status == Status.INFEASIBLE
+    assert result.x is None
+    assert result.trace is not None
+    assert result.trace[-1].phase == 1
