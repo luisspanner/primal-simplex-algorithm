@@ -17,7 +17,7 @@ teaching implementation (simplex_solver.legacy_teaching.simplex_step), but:
     against.
 """
 from dataclasses import dataclass
-from typing import List
+from typing import FrozenSet, List
 
 import numpy as np
 
@@ -50,9 +50,15 @@ def run_simplex(
     bland_after: int = None,
     max_iterations: int = DEFAULT_MAX_ITERATIONS,
     refactorize_every: int = DEFAULT_REFACTORIZE_EVERY,
+    disallowed_entering: FrozenSet[int] = frozenset(),
 ) -> PivotResult:
     """Run primal simplex pivots to optimality (or detect unboundedness),
-    starting from the given feasible basis. Does not mutate its inputs."""
+    starting from the given feasible basis. Does not mutate its inputs.
+
+    `disallowed_entering` blocks the given column indices from ever being
+    chosen as the entering variable — used by Phase I/Phase II to keep
+    artificial variables pinned at zero once Phase I has driven them out,
+    without needing to resize the matrix."""
     m, n = A.shape
     basis_indices = list(basis_indices)
     non_basis_indices = list(non_basis_indices)
@@ -69,7 +75,9 @@ def run_simplex(
         reduced_costs = c_N - c_B @ A_B_inv @ A_N
 
         use_bland = iteration >= bland_after
-        entering_local = _choose_entering(reduced_costs, non_basis_indices, tol, use_bland)
+        entering_local = _choose_entering(
+            reduced_costs, non_basis_indices, tol, use_bland, disallowed_entering
+        )
         if entering_local is None:
             return PivotResult(
                 status="optimal",
@@ -115,8 +123,11 @@ def _update_basis_inverse(A_B_inv: np.ndarray, d: np.ndarray, leaving_local: int
     return updated
 
 
-def _choose_entering(reduced_costs, non_basis_indices, tol, use_bland) -> int:
-    candidates = [j for j, rc in enumerate(reduced_costs) if rc > tol]
+def _choose_entering(reduced_costs, non_basis_indices, tol, use_bland, disallowed_entering=frozenset()) -> int:
+    candidates = [
+        j for j, rc in enumerate(reduced_costs)
+        if rc > tol and non_basis_indices[j] not in disallowed_entering
+    ]
     if not candidates:
         return None
     if use_bland:
