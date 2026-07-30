@@ -1,8 +1,8 @@
 # Simplex Solver
 
 A general-purpose Simplex-method linear programming solver in Python, built
-on top of a teaching implementation from a 4th-semester "Optimization"
-course.
+on top of a teaching implementation developed for the course "Optimization"
+(4th Semester, OTH Regensburg).
 
 `simplex_solver/` supports:
 
@@ -77,3 +77,7 @@ The suite includes unit tests per module, an end-to-end fixture suite
 cross-checked against `scipy.optimize.linprog`, and a comparison test
 verifying the new solver agrees with `legacy_teaching.py` on problems both
 can handle.
+
+## Tech stack
+
+Python, NumPy, pytest (SciPy used only for cross-checking test results).
