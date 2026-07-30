@@ -1,0 +1,8 @@
+{
+  "sense": "minimize",
+  "c": [1, 1],
+  "constraints": [
+    {"coeffs": [1, 1], "op": ">=", "rhs": 4},
+    {"coeffs": [1, -1], "op": "=", "rhs": 0}
+  ]
+}

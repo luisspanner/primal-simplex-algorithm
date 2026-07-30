@@ -1,0 +1,7 @@
+{
+  "sense": "maximize",
+  "c": [1],
+  "constraints": [
+    {"coeffs": [-1], "op": "<=", "rhs": 0}
+  ]
+}
