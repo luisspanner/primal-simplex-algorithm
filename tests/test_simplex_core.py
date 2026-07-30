@@ -122,3 +122,57 @@ def test_pfi_update_matches_scipy_on_larger_random_problem():
     )
     assert scipy_result.status == 0
     assert objective == pytest.approx(-scipy_result.fun, rel=1e-6)
+
+
+def test_trace_default_off_and_result_unaffected():
+    A = np.array([
+        [1.0, 1.0, 1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0, 1.0],
+    ])
+    b = np.array([4.0, 2.0, 3.0])
+    c = np.array([1.0, 4.0, 0.0, 0.0, 0.0])
+    basis_indices = [2, 3, 4]
+    non_basis_indices = [0, 1]
+
+    result = run_simplex(A, b, c, basis_indices, non_basis_indices)
+    assert result.trace is None
+
+
+def test_trace_final_entry_matches_result():
+    A = np.array([
+        [1.0, 1.0, 1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0, 1.0],
+    ])
+    b = np.array([4.0, 2.0, 3.0])
+    c = np.array([1.0, 4.0, 0.0, 0.0, 0.0])
+    basis_indices = [2, 3, 4]
+    non_basis_indices = [0, 1]
+
+    result = run_simplex(A, b, c, basis_indices, non_basis_indices, collect_trace=True)
+    assert result.trace is not None
+    assert len(result.trace) == result.iterations + 1
+
+    final_step = result.trace[-1]
+    assert final_step.status == result.status
+    assert final_step.entering_col is None
+    assert final_step.leaving_col is None
+    assert final_step.basis_indices == result.basis_indices
+    assert np.allclose(final_step.x_B, result.x_B)
+
+    # every non-terminal step records an actual pivot
+    for step in result.trace[:-1]:
+        assert step.status is None
+        assert step.entering_col is not None
+        assert step.leaving_col is not None
+
+
+def test_trace_captures_bland_rule_usage_on_beale_example():
+    A, b, c, basis_indices, non_basis_indices = _beale_cycling_example()
+    result = run_simplex(
+        A, b, c, basis_indices, non_basis_indices,
+        bland_after=0, max_iterations=100, collect_trace=True,
+    )
+    assert result.status == "optimal"
+    assert all(step.used_bland for step in result.trace)

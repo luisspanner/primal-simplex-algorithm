@@ -17,7 +17,7 @@ teaching implementation (simplex_solver.legacy_teaching.simplex_step), but:
     against.
 """
 from dataclasses import dataclass
-from typing import FrozenSet, List
+from typing import FrozenSet, List, Optional
 
 import numpy as np
 
@@ -31,12 +31,35 @@ class SimplexDidNotConverge(Exception):
 
 
 @dataclass
+class TraceStep:
+    """One snapshot of pivoting state, captured when collect_trace=True.
+
+    For a pivoting step, entering_col/leaving_col are the actual column
+    indices swapped (basis_indices/non_basis_indices/x_B/reduced_costs
+    reflect the state *before* that pivot is applied). The final entry in
+    a trace is terminal: entering_col/leaving_col are None and `status` is
+    set to "optimal" or "unbounded", with basis_indices/x_B matching the
+    returned PivotResult exactly.
+    """
+    iteration: int
+    basis_indices: List[int]
+    non_basis_indices: List[int]
+    x_B: np.ndarray
+    reduced_costs: np.ndarray
+    entering_col: Optional[int]
+    leaving_col: Optional[int]
+    used_bland: bool
+    status: Optional[str] = None
+
+
+@dataclass
 class PivotResult:
     status: str  # "optimal" or "unbounded"
     basis_indices: List[int]
     non_basis_indices: List[int]
     x_B: np.ndarray
     iterations: int
+    trace: Optional[List[TraceStep]] = None
 
 
 def run_simplex(
@@ -51,6 +74,7 @@ def run_simplex(
     max_iterations: int = DEFAULT_MAX_ITERATIONS,
     refactorize_every: int = DEFAULT_REFACTORIZE_EVERY,
     disallowed_entering: FrozenSet[int] = frozenset(),
+    collect_trace: bool = False,
 ) -> PivotResult:
     """Run primal simplex pivots to optimality (or detect unboundedness),
     starting from the given feasible basis. Does not mutate its inputs.
@@ -58,13 +82,18 @@ def run_simplex(
     `disallowed_entering` blocks the given column indices from ever being
     chosen as the entering variable — used by Phase I/Phase II to keep
     artificial variables pinned at zero once Phase I has driven them out,
-    without needing to resize the matrix."""
+    without needing to resize the matrix.
+
+    `collect_trace=True` records one TraceStep per iteration (plus a
+    terminal one) on the returned PivotResult.trace, for visualization.
+    Purely additive: default False, existing callers/behavior unchanged."""
     m, n = A.shape
     basis_indices = list(basis_indices)
     non_basis_indices = list(non_basis_indices)
     if bland_after is None:
         bland_after = max(50, 10 * n)
 
+    trace: Optional[List[TraceStep]] = [] if collect_trace else None
     A_B_inv = np.linalg.inv(A[:, basis_indices])
 
     for iteration in range(max_iterations):
@@ -79,25 +108,63 @@ def run_simplex(
             reduced_costs, non_basis_indices, tol, use_bland, disallowed_entering
         )
         if entering_local is None:
+            if trace is not None:
+                trace.append(TraceStep(
+                    iteration=iteration,
+                    basis_indices=list(basis_indices),
+                    non_basis_indices=list(non_basis_indices),
+                    x_B=x_B,
+                    reduced_costs=reduced_costs,
+                    entering_col=None,
+                    leaving_col=None,
+                    used_bland=use_bland,
+                    status="optimal",
+                ))
             return PivotResult(
                 status="optimal",
                 basis_indices=basis_indices,
                 non_basis_indices=non_basis_indices,
                 x_B=x_B,
                 iterations=iteration,
+                trace=trace,
             )
 
         d = A_B_inv @ A_N[:, entering_local]
         if np.all(d <= tol):
+            if trace is not None:
+                trace.append(TraceStep(
+                    iteration=iteration,
+                    basis_indices=list(basis_indices),
+                    non_basis_indices=list(non_basis_indices),
+                    x_B=x_B,
+                    reduced_costs=reduced_costs,
+                    entering_col=None,
+                    leaving_col=None,
+                    used_bland=use_bland,
+                    status="unbounded",
+                ))
             return PivotResult(
                 status="unbounded",
                 basis_indices=basis_indices,
                 non_basis_indices=non_basis_indices,
                 x_B=x_B,
                 iterations=iteration,
+                trace=trace,
             )
 
         leaving_local = _choose_leaving(x_B, d, basis_indices, tol, use_bland)
+
+        if trace is not None:
+            trace.append(TraceStep(
+                iteration=iteration,
+                basis_indices=list(basis_indices),
+                non_basis_indices=list(non_basis_indices),
+                x_B=x_B,
+                reduced_costs=reduced_costs,
+                entering_col=non_basis_indices[entering_local],
+                leaving_col=basis_indices[leaving_local],
+                used_bland=use_bland,
+            ))
 
         A_B_inv = _update_basis_inverse(A_B_inv, d, leaving_local)
 
